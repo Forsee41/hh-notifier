@@ -4,6 +4,7 @@ pub struct CronTime {
     shift: u64,
 }
 
+#[derive(Debug)]
 pub enum CronTimeCreationError {
     Start,
     End,
@@ -34,9 +35,12 @@ impl CronTime {
         } else {
             self.start
         };
-        format!("0 {} {} * * *", notify_minutes, notify_hour)
+        format!("40 {} {} * * *", notify_minutes, notify_hour)
+    }
+    pub fn update(&self) -> String {
+        "0 * * * * *".to_owned()
     }
     pub fn end(&self) -> String {
-        format!("0 0 {} * * *", self.end_)
+        format!("20 0 {} * * *", self.end_)
     }
 }

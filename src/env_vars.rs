@@ -1,26 +1,43 @@
+use crate::handler::BotConfig;
+
 pub struct EnvVars {
     pub token: String,
     pub channel_id: u64,
-    pub discord_role_name: String,
+    pub role_id: u64,
     pub start_hour: u64,
     pub end_hour: u64,
-    pub time_shift: u64,
+    pub notify_shift: u64,
+    pub tz_shift: u64,
 }
 
+#[derive(Debug)]
 pub enum EnvVarsLoadingError {
     Token,
     ChannelId,
     ChannelIdParsing,
-    DiscordRoleName,
+    RoleId,
+    RoleIdParsing,
     StartHour,
     StartHourParsing,
     EndHour,
     EndHourParsing,
     TimeShift,
     TimeShiftParsing,
+    TzShift,
+    TzShiftParsing,
 }
 
 impl EnvVars {
+    pub fn to_bot_config(&self) -> BotConfig {
+        BotConfig {
+            channel_id: self.channel_id,
+            role_id: self.role_id,
+            start: self.start_hour,
+            end: self.end_hour,
+            notify_shift: self.notify_shift,
+            tz_shift: self.tz_shift,
+        }
+    }
     /// Loads and parses environment variables.
     /// Returns a result with either a struct with corresponding fields ,or an enum variant
     /// of missing/unparseable env variable.
@@ -30,15 +47,20 @@ impl EnvVars {
         let channel_id: u64;
         let start_hour: u64;
         let end_hour: u64;
-        let time_shift: u64;
+        let notify_shift: u64;
+        let tz_shift: u64;
+        let role_id: u64;
 
         let token: String = match std::env::var("DISCORD_BOT_TOKEN") {
             Err(_) => return Err(EnvVarsLoadingError::Token),
             Ok(val) => val,
         };
-        let discord_role_name: String = match std::env::var("DISCORD_ROLE_NAME") {
-            Err(_) => return Err(EnvVarsLoadingError::Token),
-            Ok(val) => val,
+        match std::env::var("DISCORD_ROLE_ID") {
+            Err(_) => return Err(EnvVarsLoadingError::RoleId),
+            Ok(val) => match val.parse() {
+                Err(_) => return Err(EnvVarsLoadingError::RoleIdParsing),
+                Ok(val) => role_id = val,
+            },
         };
         match std::env::var("DISCORD_CHANNEL_ID") {
             Err(_) => return Err(EnvVarsLoadingError::ChannelId),
@@ -65,16 +87,24 @@ impl EnvVars {
             Err(_) => return Err(EnvVarsLoadingError::TimeShift),
             Ok(val) => match val.parse() {
                 Err(_) => return Err(EnvVarsLoadingError::TimeShiftParsing),
-                Ok(val) => time_shift = val,
+                Ok(val) => notify_shift = val,
+            },
+        };
+        match std::env::var("TIMEZONE_SHIFT_HOURS") {
+            Err(_) => return Err(EnvVarsLoadingError::TzShift),
+            Ok(val) => match val.parse() {
+                Err(_) => return Err(EnvVarsLoadingError::TzShiftParsing),
+                Ok(val) => tz_shift = val,
             },
         };
         Ok(EnvVars {
             token,
             channel_id,
-            discord_role_name,
+            role_id,
             start_hour,
             end_hour,
-            time_shift,
+            notify_shift,
+            tz_shift,
         })
     }
 }

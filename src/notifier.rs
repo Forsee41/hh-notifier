@@ -1,90 +1,112 @@
-use chrono::{prelude::*, Duration};
 use serenity::{
     async_trait,
     model::{channel::Message, id::ChannelId, prelude::UserId},
     prelude::*,
 };
 use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::{handler::BotConfig, messages_generator::MessageManager};
 
 #[async_trait]
 trait State: Send + Sync {
-    async fn update_time(&self, notifier: &Notifier) -> ();
-    async fn notify(&self, notifier: &Notifier) -> ();
-    async fn unnotify(&self, notifier: &Notifier) -> ();
+    async fn update_time(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> ();
+    async fn notify(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> ();
+    async fn unnotify(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> ();
 }
 
 struct Uninitialized;
 
 #[async_trait]
 impl State for Uninitialized {
-    async fn update_time(&self, notifier: &Notifier) -> () {}
-    async fn notify(&self, notifier: &Notifier) -> () {
-        println!("Notifying users!");
+    async fn update_time(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> () {
+        let http = notifier.ctx.http.clone();
+        for msg in messages.lock().await.iter() {
+            msg.delete(http.clone())
+                .await
+                .expect("Can't delete the message");
+        }
+        let channel = notifier.channel();
+        let msg_str = notifier.msg_manager.info_str();
+        channel
+            .send_message(http, |m| m.content(msg_str))
+            .await
+            .expect("Can't send the message in update_time");
     }
-    async fn unnotify(&self, notifier: &Notifier) -> () {}
+    async fn notify(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> () {
+        let http = notifier.ctx.http.clone();
+        let msg_str = notifier.msg_manager.notify_str();
+        let role_id = notifier.config.role_id;
+        self.update_time(notifier, messages).await;
+        notifier
+            .channel()
+            .send_message(http, |m| {
+                m.content(msg_str)
+                    .allowed_mentions(|a| a.empty_parse().roles(vec![role_id]))
+            })
+            .await
+            .expect("Can't send the message in uninitialized notify");
+    }
+    async fn unnotify(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> () {
+        self.update_time(notifier, messages).await
+    }
 }
 
 struct Notified;
 
 #[async_trait]
 impl State for Notified {
-    async fn update_time(&self, notifier: &Notifier) -> () {}
-    async fn notify(&self, notifier: &Notifier) -> () {}
-    async fn unnotify(&self, notifier: &Notifier) -> () {}
+    async fn update_time(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> () {
+        let http = notifier.ctx.http.clone();
+        let msg_str = notifier.msg_manager.info_str();
+        let msg = &mut messages.lock().await[1];
+        msg.edit(&http, |m| m.content(msg_str)).await.expect("Couldn't edit message in update_time notified state");
+    }
+    async fn notify(&self, _: &Notifier, _: Arc<Mutex<Vec<Message>>>) -> () {}
+    async fn unnotify(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> () {
+        let http = notifier.ctx.http.clone();
+        let msg = &mut messages.lock().await[0];
+        msg.delete(&http).await.expect("Couldn't delete notification message in notified unnotify");
+    }
 }
 
 struct NonNotified;
 
 #[async_trait]
 impl State for NonNotified {
-    async fn update_time(&self, notifier: &Notifier) -> () {}
-    async fn notify(&self, notifier: &Notifier) -> () {}
-    async fn unnotify(&self, notifier: &Notifier) -> () {}
-}
-
-struct MessageManager {
-    start: u64,
-    end: u64,
-    shift: u64,
-    tz_shift: u64,
-}
-impl MessageManager {
-    fn now_tz(&self) -> DateTime<FixedOffset> {
-        let tz = self.tz();
-        let utc_now = Utc::now();
-        utc_now.with_timezone(&tz)
+    async fn update_time(&self, notifier: &Notifier, messages: Arc<Mutex<Vec<Message>>>) -> () {
+        let http = notifier.ctx.http.clone();
+        let msg_str = notifier.msg_manager.info_str();
+        let msg = &mut messages.lock().await[0];
+        msg.edit(&http, |m| m.content(msg_str)).await.expect("Couldn't edit message in update_time notified state");
 
     }
-    fn tz(&self) -> FixedOffset {
-        let hour = 3600;
-        let tz_shift_seconds: i32 = hour * self.tz_shift as i32;
-        FixedOffset::east_opt(tz_shift_seconds).unwrap()
+    async fn notify(&self, notifier: &Notifier, _: Arc<Mutex<Vec<Message>>>) -> () {
+        let http = notifier.ctx.http.clone();
+        let msg_str = notifier.msg_manager.notify_str();
+        let role_id = notifier.config.role_id;
+        notifier
+            .channel()
+            .send_message(http, |m| {
+                m.content(msg_str)
+                    .allowed_mentions(|a| a.empty_parse().roles(vec![role_id]))
+            })
+            .await
+            .expect("Can't send the message in uninitialized notify");
     }
-    fn next_hh_start_datetime(&self) -> DateTime<FixedOffset> {
-        let now = self.now_tz();
-        let hh_start = now.clone().date_naive().and_hms_opt(self.start as u32, 0, 0).unwrap();
-        let hh_start_with_tz: DateTime<FixedOffset> = DateTime::<FixedOffset>::from_utc(hh_start, self.tz()).with_timezone(&self.tz());
-        if now.hour() as u64 >= self.start {
-            hh_start_with_tz + Duration::days(1)
-        } else {
-            hh_start_with_tz
-        }
-    }
-    fn duration_until_next_hh_start(&self) {}
-    async fn generate_info_str(&self) -> String {
-        "".to_owned()
-    }
+    async fn unnotify(&self, _: &Notifier, _: Arc<Mutex<Vec<Message>>>) -> () {}
 }
 
 pub struct Notifier {
+    msg_manager: Arc<MessageManager>,
     ctx: Arc<Context>,
-    channel_id: u64,
+    config: Arc<BotConfig>,
     bot_uid: UserId,
 }
 
 impl Notifier {
     pub async fn get_messages(&self) -> Vec<Message> {
-        let channel_id = ChannelId(self.channel_id);
+        let channel_id = self.channel();
         channel_id
             .messages(&self.ctx.http, |retriever| retriever.limit(100))
             .await
@@ -92,7 +114,7 @@ impl Notifier {
     }
 
     async fn state(&self, messages: &Vec<Message>) -> Box<dyn State> {
-        if (1..=2).contains(&messages.len()) {
+        if !(1..=2).contains(&messages.len()) {
             return Box::new(Uninitialized);
         };
         for msg in messages {
@@ -100,32 +122,44 @@ impl Notifier {
                 return Box::new(Uninitialized);
             }
         }
-        Box::new(NonNotified)
+        if messages.len() == 1 {
+            return Box::new(NonNotified)
+        }
+        Box::new(Notified)
+    }
+    pub fn channel(&self) -> ChannelId {
+        ChannelId(self.config.channel_id)
     }
 
     pub async fn update_time(&mut self) {
         let messages = self.get_messages().await;
         let state = self.state(&messages).await;
-        state.update_time(self).await;
+        state.update_time(self, Arc::new(Mutex::new(messages))).await;
     }
 
     pub async fn notify(&mut self) {
         let messages = self.get_messages().await;
         let state = self.state(&messages).await;
-        state.notify(self).await;
+        state.notify(self, Arc::new(Mutex::new(messages))).await;
     }
 
     pub async fn unnotify(&mut self) {
         let messages = self.get_messages().await;
         let state = self.state(&messages).await;
-        state.unnotify(self).await;
+        state.unnotify(self, Arc::new(Mutex::new(messages))).await;
     }
 
-    pub async fn new(ctx: Arc<Context>, channel_id: u64, bot_uid: UserId) -> Notifier {
+    pub async fn new(
+        ctx: Arc<Context>,
+        bot_uid: UserId,
+        msg_manager: Arc<MessageManager>,
+        config: Arc<BotConfig>,
+    ) -> Notifier {
         Notifier {
             ctx,
-            channel_id,
             bot_uid,
+            msg_manager,
+            config,
         }
     }
 }

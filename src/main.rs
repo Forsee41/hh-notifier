@@ -1,5 +1,5 @@
 use dotenv::dotenv;
-use hh_notifier::handler::Handler;
+use hh_notifier::{env_vars::EnvVars, handler::Handler};
 use serenity::prelude::{Client, GatewayIntents};
 use tokio_cron_scheduler::JobScheduler;
 
@@ -10,13 +10,10 @@ async fn main() {
     let sched = JobScheduler::new()
         .await
         .expect("Couldn't create a job scheduler");
-    let channel_id =
-        std::env::var("DISCORD_CHANNEL_ID").expect("DISCORD_CHANNEL_ID env var is not set!");
-    let channel_id: u64 = channel_id
-        .parse()
-        .expect("DISCORD_CHANNEL_ID can't be casted to number");
+    let env_vars = EnvVars::load().expect("Unable to load env vars");
+    let config = env_vars.to_bot_config();
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
-    let handler = Handler::new(channel_id, sched);
+    let handler = Handler::new(sched, config);
     let mut client = Client::builder(&token, intents)
         .event_handler(handler)
         .await
