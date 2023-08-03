@@ -58,7 +58,13 @@ impl MessageManager {
     pub fn during_event_str(&self) -> String {
         let duration = self._duration_until_next_hh_end();
         let end_datetime = self._next_hh_end_datetime();
-        format!("Happy Hour ends in `{}m` at `{}:{:0>2}`", (duration.num_minutes() % 60) + 1, end_datetime.hour(), end_datetime.minute())
+        format!(
+            "Happy Hour ends in `{}h {}m` at `{}:{:0>2}`",
+            duration.num_hours(),
+            (duration.num_minutes() % 60) + 1,
+            end_datetime.hour(),
+            end_datetime.minute(),
+        )
     }
     pub fn before_event_str(&self) -> String {
         let duration = self._duration_until_next_hh_start();
