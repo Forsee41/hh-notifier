@@ -1,80 +1,60 @@
 use crate::handler::BotConfig;
 use chrono::{prelude::*, Duration};
-use std::sync::Arc;
 use serenity::model::{mention::Mention, prelude::RoleId};
+use std::sync::Arc;
 
 pub struct MessageManager {
     config: Arc<BotConfig>,
 }
 impl MessageManager {
-    fn _now_tz(&self) -> DateTime<FixedOffset> {
-        let tz = self._tz();
-        let utc_now = Utc::now();
-        utc_now.with_timezone(&tz)
-    }
-    fn _tz(&self) -> FixedOffset {
-        let hour = 3600;
-        let tz_shift_seconds: i32 = hour * self.config.tz_shift as i32;
-        FixedOffset::east_opt(tz_shift_seconds).unwrap()
-    }
-    fn _next_hh_start_datetime(&self) -> DateTime<FixedOffset> {
-        let now_tz = self._now_tz();
+    fn _next_hh_start_datetime(&self) -> DateTime<Utc> {
         let now = Utc::now();
-        let hh_start = now_tz
+        let hh_start = now
             .clone()
             .date_naive()
             .and_hms_opt(self.config.start as u32, 0, 0)
-            .unwrap();
-        let hh_start_with_tz: DateTime<FixedOffset> =
-            DateTime::<FixedOffset>::from_utc(hh_start, self._tz());
-        if now.hour() as u64 >= self.config.start {
-            hh_start_with_tz + Duration::days(1)
+            .unwrap()
+            .and_utc();
+        if hh_start <= now {
+            hh_start + Duration::days(1)
         } else {
-            hh_start_with_tz
+            hh_start
         }
     }
-    fn _next_hh_end_datetime(&self) -> DateTime<FixedOffset> {
-        let now_tz = self._now_tz();
+    fn _next_hh_end_datetime(&self) -> DateTime<Utc> {
         let now = Utc::now();
-        let hh_end = now_tz
+        let hh_end = now
             .clone()
             .date_naive()
             .and_hms_opt(self.config.end as u32, 0, 0)
-            .unwrap();
-        let hh_end_with_tz: DateTime<FixedOffset> =
-            DateTime::<FixedOffset>::from_utc(hh_end, self._tz());
-        if now.hour() as u64 >= self.config.end {
-            hh_end_with_tz + Duration::days(1)
+            .unwrap()
+            .and_utc();
+        if hh_end <= now {
+            hh_end + Duration::days(1)
         } else {
-            hh_end_with_tz
+            hh_end
         }
     }
     fn _duration_until_next_hh_start(&self) -> Duration {
-        self._next_hh_start_datetime() - Utc::now().with_timezone(&self._tz())
+        self._next_hh_start_datetime() - Utc::now()
     }
     fn _duration_until_next_hh_end(&self) -> Duration {
-        self._next_hh_end_datetime() - Utc::now().with_timezone(&self._tz())
+        self._next_hh_end_datetime() - Utc::now()
     }
     pub fn during_event_str(&self) -> String {
-        let duration = self._duration_until_next_hh_end();
         let end_datetime = self._next_hh_end_datetime();
         format!(
-            "Happy Hour ends in `{}h {}m` at `{}:{:0>2}`",
-            duration.num_hours(),
-            (duration.num_minutes() % 60) + 1,
-            end_datetime.hour(),
-            end_datetime.minute(),
+            "Happy Hour ends <t:{}:R> at <t:{}:t>",
+            end_datetime.timestamp(),
+            end_datetime.timestamp(),
         )
     }
     pub fn before_event_str(&self) -> String {
-        let duration = self._duration_until_next_hh_start();
         let start_datetime = self._next_hh_start_datetime();
         format!(
-            "Happy Hour starts in `{}h {}m` at `{}:{:0>2}`",
-            duration.num_hours(),
-            (duration.num_minutes() % 60) + 1,
-            start_datetime.hour(),
-            start_datetime.minute(),
+            "Happy Hour starts <t:{}:R> at <t:{}:t>",
+            start_datetime.timestamp(),
+            start_datetime.timestamp(),
         )
     }
     pub fn notify_str(&self) -> String {
@@ -84,13 +64,12 @@ impl MessageManager {
     }
     pub fn info_str(&self) -> String {
         let next_end_time = self._next_hh_end_datetime();
-        let next_start_time= self._next_hh_start_datetime();
+        let next_start_time = self._next_hh_start_datetime();
         if next_start_time > next_end_time {
             self.during_event_str()
         } else {
             self.before_event_str()
         }
-
     }
     pub fn new(config: Arc<BotConfig>) -> Self {
         MessageManager { config }

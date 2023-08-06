@@ -7,7 +7,6 @@ pub struct EnvVars {
     pub start_hour: u64,
     pub end_hour: u64,
     pub notify_shift: u64,
-    pub tz_shift: u64,
 }
 
 #[derive(Debug)]
@@ -23,8 +22,6 @@ pub enum EnvVarsLoadingError {
     EndHourParsing,
     TimeShift,
     TimeShiftParsing,
-    TzShift,
-    TzShiftParsing,
 }
 
 impl EnvVars {
@@ -35,7 +32,6 @@ impl EnvVars {
             start: self.start_hour,
             end: self.end_hour,
             notify_shift: self.notify_shift,
-            tz_shift: self.tz_shift,
         }
     }
     /// Loads and parses environment variables.
@@ -48,7 +44,6 @@ impl EnvVars {
         let start_hour: u64;
         let end_hour: u64;
         let notify_shift: u64;
-        let tz_shift: u64;
         let role_id: u64;
 
         let token: String = match std::env::var("DISCORD_BOT_TOKEN") {
@@ -90,13 +85,6 @@ impl EnvVars {
                 Ok(val) => notify_shift = val,
             },
         };
-        match std::env::var("TIMEZONE_SHIFT_HOURS") {
-            Err(_) => return Err(EnvVarsLoadingError::TzShift),
-            Ok(val) => match val.parse() {
-                Err(_) => return Err(EnvVarsLoadingError::TzShiftParsing),
-                Ok(val) => tz_shift = val,
-            },
-        };
         Ok(EnvVars {
             token,
             channel_id,
@@ -104,7 +92,6 @@ impl EnvVars {
             start_hour,
             end_hour,
             notify_shift,
-            tz_shift,
         })
     }
 }

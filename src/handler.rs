@@ -8,7 +8,6 @@ pub struct BotConfig {
     pub role_id: u64,
     pub start: u64,
     pub end: u64,
-    pub tz_shift: u64,
     pub notify_shift: u64,
     pub channel_id: u64,
 }
@@ -59,13 +58,7 @@ impl Handler {
         Job::new_async(notify_crontime, move |_uuid, _l| {
             let notifier_clone = Arc::clone(&notifier_clone);
             Box::pin(async move {
-                notifier_clone
-                    .lock()
-                    .await
-                    .as_mut()
-                    .unwrap()
-                    .notify()
-                    .await;
+                notifier_clone.lock().await.as_mut().unwrap().notify().await;
             })
         })
         .expect("Couldn't create a cronjob")
