@@ -1,23 +1,30 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1.59.0 as chef
-WORKDIR /app
-RUN apt update && apt install lld clang -y
+# Rust as the base image
+FROM rust:latest as build
 
-FROM chef as planner
-COPY . .
-RUN cargo chef prepare  --recipe-path recipe.json
+# Create a new empty shell project
+RUN USER=root cargo new --bin hh-notifier
+WORKDIR /hh-notifier
 
-FROM chef as builder
-COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
-COPY . .
-RUN cargo build --release --bin hh-notifier
+# Copy our manifests
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
 
-FROM debian:bullseye-slim AS runtime
-WORKDIR /app
-RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends openssl ca-certificates \
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/hh-notifier hh-notifier
-ENTRYPOINT ["./hh-notifier"]
+# Build only the dependencies to cache them
+RUN cargo build --release
+RUN rm src/*.rs
+
+# Copy the source code
+COPY ./src ./src
+
+# Build for release.
+RUN cargo build --release
+
+# The final base image
+FROM debian:buster-slim
+
+# Copy from the previous build
+COPY --from=build /hh-notifier/target/release/hh-notifier /usr/src/hh-notifier
+# COPY --from=build /hh-notifier/target/release/hh-notifier/target/x86_64-unknown-linux-musl/release/hh-notifier .
+
+# Run the binary
+CMD ["/usr/src/hh-notifier"]
